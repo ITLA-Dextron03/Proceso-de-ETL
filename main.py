@@ -29,10 +29,10 @@ def create_db_engine():
         )
         engine = create_engine(f'mssql+pyodbc:///?odbc_connect={params}')
         with engine.connect() as conn:
-            print("✅ Conexión a la base de datos exitosa.")
+            print("Conexión a la base de datos exitosa.")
         return engine
     except Exception as e:
-        print(f"❌ Error al conectar con la base de datos: {e}")
+        print(f"Error al conectar con la base de datos: {e}")
         sys.exit()
 
 def limpiar_id(id_str, prefijo):
@@ -41,9 +41,10 @@ def limpiar_id(id_str, prefijo):
     return pd.to_numeric(id_str, errors='coerce')
 
 # --- FUNCIONES DE CARGA (USAN CONEXIÓN EXISTENTE) ---
+
 def load_data_conditionally(connection, df, table_name, pk_column):
     if df.empty:
-        print(f"No hay nuevos registros para '{table_name}'.")
+        # Silencioso si no hay nada que cargar
         return True
     try:
         existing_ids = set(pd.read_sql(f"SELECT {pk_column} FROM {table_name}", connection)[pk_column])
@@ -98,9 +99,10 @@ def prepare_and_load_dimensions(engine, dfs):
             cargas_df['FechaCarga'] = pd.to_datetime(cargas_df['FechaCarga'], errors='coerce')
             cargas_df.dropna(subset=['FechaCarga'], inplace=True)
             load_dimension_conditionally(connection, cargas_df, 'RegistroCargas', 'Nombre')
+    print("Dimensiones cargadas.")
 
 def get_id_maps(engine):
-    print("\n--- Fase 3: Mapeando IDs ---")
+    print("Refrescando mapas de IDs desde la base de datos...")
     try:
         with engine.connect() as connection:
             return {
@@ -148,7 +150,7 @@ def transform_data(dfs, id_maps):
     df_encuestas = df_encuestas[df_encuestas['IdCliente'].isin(valid_client_ids)]
     df_encuestas['IdClasificacion'] = df_encuestas['Clasificacion'].map(id_maps['clasificacion'])
     df_encuestas['IdCarga'] = id_maps['cargas'].get('CSV')
-    df_encuestas_final = df_encuestas.dropna(subset=['IdCliente', 'IdProducto', 'IdClasificacion'])[['IdOpinion', 'IdCliente', 'IdProducto', 'IdCarga', 'Fecha', 'Comentario', 'IdClasificacion', 'PuntajeSatisfaccion']]
+    df_encuestas_final = df_encuestas.dropna(subset=['IdCliente', 'IdProducto', 'IdClasificacion', 'IdCarga'])[['IdOpinion', 'IdCliente', 'IdProducto', 'IdCarga', 'Fecha', 'Comentario', 'IdClasificacion', 'PuntajeSatisfaccion']]
 
     # WebReviews
     df_webreviews = dfs['web_reviews'].copy()
@@ -156,9 +158,9 @@ def transform_data(dfs, id_maps):
     df_webreviews['IdProducto'] = df_webreviews['IdProducto'].apply(limpiar_id, prefijo='P')
     df_webreviews = df_webreviews[df_webreviews['IdCliente'].isin(valid_client_ids)]
     df_webreviews['IdCarga'] = id_maps['cargas'].get('Web')
-    df_webreviews_final = df_webreviews.dropna(subset=['IdCliente', 'IdProducto'])[['IdReview', 'IdCliente', 'IdProducto', 'IdCarga', 'Fecha', 'Comentario', 'Rating']]
+    df_webreviews_final = df_webreviews.dropna(subset=['IdCliente', 'IdProducto', 'IdCarga'])[['IdReview', 'IdCliente', 'IdProducto', 'IdCarga', 'Fecha', 'Comentario', 'Rating']]
 
-    print("✅ Datos transformados.")
+    print("Datos transformados.")
     return {
         "clientes": df_clientes,
         "productos": df_productos,
@@ -172,24 +174,19 @@ def load_main_tables(engine, data_to_load):
     with engine.connect() as connection:
         with connection.begin() as transaction:
             try:
-                print("Cargando Clientes...")
                 if not load_data_conditionally(connection, data_to_load['clientes'], 'Clientes', 'IdCliente'):
                     raise Exception("Fallo en la carga de Clientes")
-
-                print("Cargando Productos...")
+                
                 productos_a_cargar = data_to_load['productos'][['IdProducto', 'Nombre', 'IdCategoria']].dropna(subset=['IdProducto'])
                 if not load_data_conditionally(connection, productos_a_cargar, 'Productos', 'IdProducto'):
                     raise Exception("Fallo en la carga de Productos")
 
-                print("Cargando Comentarios...")
                 if not load_data_conditionally(connection, data_to_load['comentarios'], 'Comentarios', 'IdComment'):
                     raise Exception("Fallo en la carga de Comentarios")
 
-                print("Cargando Encuestas...")
                 if not load_data_conditionally(connection, data_to_load['encuestas'], 'Encuestas', 'IdOpinion'):
                     raise Exception("Fallo en la carga de Encuestas")
 
-                print("Cargando WebReviews...")
                 if not load_data_conditionally(connection, data_to_load['webreviews'], 'WebReviews', 'IdReview'):
                     raise Exception("Fallo en la carga de WebReviews")
                 
@@ -203,11 +200,17 @@ def main():
     try:
         engine = create_db_engine()
         source_dfs = extract_data(FILE_PATHS)
+        
+        print("\n--- Fase 2: Preparando y cargando dimensiones ---")
         prepare_and_load_dimensions(engine, source_dfs)
+        
+        print("\n--- Fase 3: Obteniendo mapas de IDs ---")
         id_maps = get_id_maps(engine)
+        
         transformed_data = transform_data(source_dfs, id_maps)
         load_main_tables(engine, transformed_data)
-        print("\¡Proceso ETL completado!")
+        
+        print("\n¡Proceso ETL completado!")
     except Exception as e:
         print(f"Ocurrió un error inesperado en el flujo principal: {e}")
 

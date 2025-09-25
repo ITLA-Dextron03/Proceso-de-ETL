@@ -219,4 +219,8 @@ GO
 ![Tabla-Fuente](img/image_fuente.png)
 
 ## Captura de pantallas que muestra la cantidad de registros subida a cada tabla.
-![Tabla-Fuente](img/image_cargadedatos.png)
+**Carga de Datos**
+![carga-datos](img/image_cargadedatos.png)
+
+**Datos existentes**
+![datos-existentes](img/image_existentes.png)
