@@ -44,7 +44,6 @@ def limpiar_id(id_str, prefijo):
 
 def load_data_conditionally(connection, df, table_name, pk_column):
     if df.empty:
-        # Silencioso si no hay nada que cargar
         return True
     try:
         existing_ids = set(pd.read_sql(f"SELECT {pk_column} FROM {table_name}", connection)[pk_column])
@@ -89,7 +88,7 @@ def extract_data(file_paths):
 def prepare_and_load_dimensions(engine, dfs):
     print("\n--- Fase 2: Cargando dimensiones ---")
     with engine.connect() as connection:
-        with connection.begin(): # Transacción para dimensiones
+        with connection.begin():
             load_dimension_conditionally(connection, pd.DataFrame(dfs['products']['Categoría'].dropna().unique(), columns=['Nombre']), 'Categorias', 'Nombre')
             load_dimension_conditionally(connection, pd.DataFrame(dfs['surveys']['Clasificacion'].dropna().unique(), columns=['Nombre']), 'Clasificaciones', 'Nombre')
             load_dimension_conditionally(connection, pd.DataFrame(dfs['social_comments']['Fuente'].dropna().unique(), columns=['Nombre']), 'Fuentes', 'Nombre')
@@ -149,7 +148,7 @@ def transform_data(dfs, id_maps):
     df_encuestas['IdCliente'] = df_encuestas['IdCliente'].astype('Int64')
     df_encuestas = df_encuestas[df_encuestas['IdCliente'].isin(valid_client_ids)]
     df_encuestas['IdClasificacion'] = df_encuestas['Clasificacion'].map(id_maps['clasificacion'])
-    df_encuestas['IdCarga'] = id_maps['cargas'].get('CSV')
+    df_encuestas['IdCarga'] = id_maps['cargas'].get('Archivo') # CORRECCIÓN: Usar 'Archivo' en lugar de 'CSV'
     df_encuestas_final = df_encuestas.dropna(subset=['IdCliente', 'IdProducto', 'IdClasificacion', 'IdCarga'])[['IdOpinion', 'IdCliente', 'IdProducto', 'IdCarga', 'Fecha', 'Comentario', 'IdClasificacion', 'PuntajeSatisfaccion']]
 
     # WebReviews

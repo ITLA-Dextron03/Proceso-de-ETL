@@ -1,226 +1,179 @@
-# Proyecto de Análisis de Opiniones de Clientes
+# **Informe Técnico Final**
+## **Proyecto: Pipeline de ETL para Análisis de Opiniones de Clientes**
 
-Este proyecto implementa un proceso de ETL (Extracción, Transformación y Carga) para consolidar opiniones de clientes desde diversas fuentes en una base de datos relacional centralizada en **SQL Server**.
-
-## Descripción General del Flujo
-
-El proceso completo se gestiona a través de un script de Python (`main.py`) que realiza las siguientes operaciones:
-
-1. **Extracción**: Lee datos de múltiples archivos CSV ubicados en la carpeta `/csv`, que contienen información sobre clientes, productos, comentarios de redes sociales, encuestas y reseñas web.  
-2. **Transformación**:  
-   * Limpia y estandariza los datos, incluyendo la normalización de IDs.  
-   * Mapea datos categóricos (como categorías de productos, clasificaciones de encuestas) a sus correspondientes IDs en las tablas de dimensión.  
-   * Asegura la integridad referencial creando registros "placeholder" para clientes o productos que se mencionan en las opiniones pero no existen en los archivos maestros.  
-3. **Carga**: Inserta los datos limpios y transformados en la base de datos `OpinionDB` de SQL Server, poblando tanto las tablas de dimensiones como las tablas de hechos.
+**Fecha:** 25 de septiembre de 2025
 
 ---
 
-## Estructura de la Base de Datos
+### **1. Introducción y Objetivos del Proyecto**
 
-El diseño de la base de datos está orientado a soportar análisis de opiniones de manera estructurada y eficiente. Se incluyen **tablas de dimensiones** (clientes, productos, categorías, fuentes, clasificaciones) y **tablas de hechos** (comentarios, encuestas, reseñas web).  
+#### **1.1. Propósito**
+El presente documento detalla la arquitectura y funcionamiento del sistema de **ETL (Extracción, Transformación y Carga)** desarrollado para centralizar la inteligencia de negocio derivada de las opiniones de los clientes. El objetivo principal del proyecto es consolidar datos de múltiples fuentes heterogéneas en un único repositorio de datos robusto, consistente y optimizado para el análisis.
 
-### Descripción de Tablas
+#### **1.2. Alcance**
+El proyecto abarca el ciclo de vida completo de los datos, desde su estado crudo en archivos CSV hasta su almacenamiento estructurado y relacional en una base de datos **SQL Server**. La solución implementada es un pipeline de datos automatizado, resiliente y re-ejecutable.
 
-- **Clientes**: Contiene la información básica de los clientes, incluyendo nombre y correo electrónico.  
-- **Categorias**: Clasifica los productos en diferentes categorías (ejemplo: electrónicos, ropa, alimentos).  
-- **Productos**: Lista de productos ofrecidos, vinculados a una categoría.  
-- **Clasificaciones**: Define las posibles clasificaciones de encuestas (ejemplo: “Positiva”, “Negativa”, “Neutral”).  
-- **RegistroCargas**: Almacena el histórico de cargas de datos indicando nombre y fecha de cada proceso ETL.  
-- **Fuentes**: Representa las diferentes plataformas de origen de las opiniones (ejemplo: “Twitter”, “Instagram”, “Facebook”, “Sitio Web”).  
-- **Comentarios**: Registra los comentarios en redes sociales vinculados a un cliente, producto y fuente, con fecha y texto de opinión.  
-- **Encuestas**: Guarda resultados de encuestas de satisfacción, con clasificación y puntaje (1 a 5).  
-- **WebReviews**: Contiene reseñas web asociadas a un cliente y producto, junto con un **rating** de 1 a 5 estrellas.  
+#### **1.3. Fuentes de Datos**
+El pipeline está diseñado para procesar las siguientes fuentes de datos:
+*   **Maestros de Datos:** `clients.csv`, `products.csv`.
+*   **Datos Transaccionales (Opiniones):** `social_comments.csv`, `surveys_part1.csv`, `web_reviews.csv`.
+*   **Metadatos:** `fuente_datos.csv` para el registro de cargas.
 
-### Particiones de la Base de Datos
-
-Para mejorar el rendimiento en consultas históricas, las tablas de hechos (Comentarios, Encuestas, WebReviews) están particionadas por rango de **fecha**, utilizando los siguientes grupos de archivos:  
-
-- **FG_2024** → Datos con fecha hasta el **31-12-2024**.  
-- **FG_2025** → Datos con fecha hasta el **31-12-2025**.  
-- **FG_2026** → Datos posteriores al 01-01-2026.  
-
-Esto permite escalar el almacenamiento y mejorar el rendimiento de consultas sobre grandes volúmenes de datos.
-
-### Diagrama Entidad-Relación
-
-La siguiente imagen muestra la relación entre las tablas:  
-
-![Diagrama Entidad-Relación](diagrama%20entidad%E2%80%93relaci%C3%B3n.jpg)
+#### **1.4. Tecnologías Clave**
+*   **Lenguaje de Programación:** Python 3.x
+*   **Librerías Principales:** Pandas (para manipulación de datos en memoria), SQLAlchemy (para la comunicación con la base de datos).
+*   **Sistema Gestor de Base de Datos (SGBD):** Microsoft SQL Server.
 
 ---
 
-## Script SQL de Creación
+### **2. Arquitectura de la Solución**
 
-El archivo `Base de Datos Relacional copy.sql` contiene todas las sentencias necesarias para crear la base de datos `OpinionDB`, las tablas, relaciones y esquemas de partición.  
+La solución se compone de una base de datos relacional optimizada y un script de Python que actúa como motor del proceso ETL.
 
-> **Importante**: Modifica las rutas `FILENAME` para que apunten a directorios válidos en tu sistema.
+#### **2.1. Diseño de la Base de Datos `OpinionDB`**
+Se ha diseñado una base de datos con un esquema similar al de estrella, que separa los datos descriptivos (dimensiones) de los datos de eventos (hechos). Esta estructura es el estándar de la industria para el análisis de datos y la inteligencia de negocio.
 
-```sql
-CREATE DATABASE OpinionDB
-ON PRIMARY
-(
-    NAME = N'OpinionDB_Primary',
-    FILENAME = 'C:\RUTA_PERSONALIZADA\SQLData\OpinionDB_Primary.mdf',
-    SIZE = 10MB,
-    MAXSIZE = UNLIMITED,
-    FILEGROWTH = 5MB
-),
-FILEGROUP FG_2024
-(
-    NAME = 'OpinionDB_2024',
-    FILENAME = 'C:\RUTA_PERSONALIZADA\SQLData\Opinion2024\OpinionDB_2024.ndf',
-    SIZE = 10MB,
-    MAXSIZE = UNLIMITED,
-    FILEGROWTH = 5MB
-),
-FILEGROUP FG_2025
-(
-    NAME = 'OpinionDB_2025',
-    FILENAME = 'C:\RUTA_PERSONALIZADA\SQLData\Opinion2025\OpinionDB_2025.ndf',
-    SIZE = 10MB,
-    MAXSIZE = UNLIMITED,
-    FILEGROWTH = 5MB
-),
-FILEGROUP FG_2026
-(
-    NAME = 'OpinionDB_2026',
-    FILENAME = 'C:\RUTA_PERSONALIZADA\SQLData\Opinion2026\OpinionDB_2026.ndf',
-    SIZE = 10MB,
-    MAXSIZE = UNLIMITED,
-    FILEGROWTH = 5MB
-)
-LOG ON
-(
-    NAME = N'OpinionDB_Log',
-    FILENAME = 'C:\RUTA_PERSONALIZADA\SQLData\Logs\OpinionDB.ldf',
-    SIZE = 10MB,
-    MAXSIZE = 2GB,
-    FILEGROWTH = 5MB
-);
- 
-USE OpinionDB;
-GO
+**Tablas de Dimensiones:**
 
-CREATE TABLE Clientes (
-    IdCliente INT PRIMARY KEY,
-    Nombre NVARCHAR(100) NOT NULL,
-    Email NVARCHAR(150) UNIQUE NOT NULL
-);
+| Tabla | Columna | Tipo de Dato | Descripción |
+| :--- | :--- | :--- | :--- |
+| **Clientes** | `IdCliente` | INT (PK) | Identificador único del cliente. |
+| | `Nombre` | NVARCHAR(100) | Nombre completo del cliente. |
+| | `Email` | NVARCHAR(150) | Correo electrónico (restringido a valores únicos). |
+| **Productos** | `IdProducto` | INT (PK) | Identificador único del producto. |
+| | `Nombre` | NVARCHAR(100) | Nombre del producto. |
+| | `IdCategoria` | INT (FK) | Referencia a la tabla `Categorias`. |
+| **Categorias** | `IdCategoria` | INT (PK, ID) | Clave primaria autoincremental. |
+| | `Nombre` | NVARCHAR(100) | Nombre único de la categoría. |
+| **Fuentes** | `IdFuente` | INT (PK, ID) | Clave primaria autoincremental. |
+| | `Nombre` | NVARCHAR(100) | Nombre de la fuente de la opinión (Ej: Instagram, Web). |
+| **Clasificaciones**| `IdClasificacion`| INT (PK, ID) | Clave primaria autoincremental. |
+| | `Nombre` | NVARCHAR(50) | Clasificación de la opinión (Ej: Positiva, Neutra). |
+| **RegistroCargas**| `IdCarga` | INT (PK, ID) | Clave primaria autoincremental. |
+| | `Nombre` | NVARCHAR(50) | Tipo de fuente de la carga (Ej: API, Archivo). |
+| | `FechaCarga` | DATETIME | Fecha y hora de la carga de datos. |
 
-CREATE TABLE Categorias (
-    IdCategoria INT PRIMARY KEY IDENTITY(1,1),
-    Nombre NVARCHAR(100) UNIQUE NOT NULL
-);
+**Tablas de Hechos:**
 
-CREATE TABLE Productos (
-    IdProducto INT PRIMARY KEY,
-    Nombre NVARCHAR(100) NOT NULL,
-    IdCategoria INT,
-    CONSTRAINT FK_Productos_Categoria FOREIGN KEY (IdCategoria) REFERENCES Categorias(IdCategoria)
-);
+| Tabla | Columna | Tipo de Dato | Descripción |
+| :--- | :--- | :--- | :--- |
+| **Comentarios** | `IdComment` | VARCHAR(10) (PK) | Identificador único del comentario. |
+| | `IdCliente` | INT (FK) | Referencia al cliente que hizo el comentario. |
+| | `IdProducto` | INT (FK) | Referencia al producto comentado. |
+| | `IdFuente` | INT (FK) | Referencia a la fuente del comentario. |
+| | `Fecha` | DATE (PK) | Fecha del comentario (parte de la clave de partición). |
+| | `Comentario` | NVARCHAR(MAX) | Texto completo de la opinión. |
+| **Encuestas** | `IdOpinion` | INT (PK) | Identificador único de la encuesta. |
+| | `IdCliente` | INT (FK) | Referencia al cliente encuestado. |
+| | `IdProducto` | INT (FK) | Referencia al producto evaluado. |
+| | `IdCarga` | INT (FK) | Referencia al lote de carga. |
+| | `Fecha` | DATE (PK) | Fecha de la encuesta (parte de la clave de partición). |
+| | `PuntajeSatisfaccion`| INT | Puntaje numérico (1-5). |
+| **WebReviews** | `IdReview` | VARCHAR(10) (PK) | Identificador único de la reseña. |
+| | `IdCliente` | INT (FK) | Referencia al cliente que dejó la reseña. |
+| | `IdProducto` | INT (FK) | Referencia al producto reseñado. |
+| | `IdCarga` | INT (FK) | Referencia al lote de carga. |
+| | `Fecha` | DATE (PK) | Fecha de la reseña (parte de la clave de partición). |
+| | `Rating` | INT | Calificación numérica (1-5). |
 
-CREATE TABLE Clasificaciones (
-    IdClasificacion INT PRIMARY KEY IDENTITY(1,1),
-    Nombre NVARCHAR(50) UNIQUE NOT NULL
-);
-GO
+#### **2.2. Diagrama Entidad-Relación (DER)**
+El siguiente diagrama visualiza la arquitectura relacional de la base de datos:
 
-CREATE TABLE RegistroCargas (
-    IdCarga INT PRIMARY KEY IDENTITY(1,1),
-    Nombre NVARCHAR(50) UNIQUE NOT NULL,
-    FechaCarga DATETIME NOT NULL
-);
+![Diagrama de la Base de Datos](img/diagrama%20entidad–relación.jpg)
 
-CREATE TABLE Fuentes (
-    IdFuente INT PRIMARY KEY IDENTITY(1,1),
-    Nombre NVARCHAR(100) UNIQUE NOT NULL -- Ej: 'Instagram', 'Twitter', 'Facebook'
-);
-GO
+#### **2.3. Estrategia de Almacenamiento y Rendimiento: Particionamiento**
+Para asegurar un alto rendimiento a medida que el volumen de datos crezca, las tablas de hechos (`Comentarios`, `Encuestas`, `WebReviews`) han sido particionadas por un rango de fechas anual. Esto significa que los datos se almacenan físicamente en archivos separados según el año. Esta técnica avanzada ofrece dos ventajas clave:
+1.  **Mejora de Rendimiento:** Las consultas que filtren por fecha (ej. "traer todas las opiniones de 2024") serán significativamente más rápidas, ya que el motor de la base de datos solo necesita leer el archivo físico correspondiente a ese año.
+2.  **Facilidad de Mantenimiento:** Simplifica la gestión de datos históricos, permitiendo archivar o eliminar particiones antiguas de manera eficiente sin afectar el rendimiento del resto de la tabla.
 
-CREATE PARTITION FUNCTION pf_FechaRango (DATE)
-AS RANGE LEFT FOR VALUES ('2024-12-31', '2025-12-31');
-GO
+---
 
-CREATE PARTITION SCHEME ps_FechaRango
-AS PARTITION pf_FechaRango
-TO (FG_2024, FG_2025, FG_2026);
-GO
+### **3. Descripción del Pipeline de ETL (`main.py`)**
 
-CREATE TABLE Comentarios (
-    IdComment VARCHAR(10) NOT NULL,
-    IdCliente INT NOT NULL,
-    IdProducto INT NOT NULL,
-    IdFuente INT NOT NULL,
-    Fecha DATE NOT NULL,
-    Comentario NVARCHAR(MAX),
-    PRIMARY KEY NONCLUSTERED (IdComment, Fecha),
-    CONSTRAINT FK_Comentarios_Cliente FOREIGN KEY (IdCliente) REFERENCES Clientes(IdCliente),
-    CONSTRAINT FK_Comentarios_Producto FOREIGN KEY (IdProducto) REFERENCES Productos(IdProducto),
-    CONSTRAINT FK_Comentarios_Fuente FOREIGN KEY (IdFuente) REFERENCES Fuentes(IdFuente)
-)
-ON ps_FechaRango(Fecha);
-GO
+El pipeline de Python es el motor que impulsa todo el proceso. Ha sido diseñado para ser modular, robusto y idempotente (es decir, se puede ejecutar múltiples veces sin duplicar datos ni causar errores), con un flujo de ejecución lógico y controlado.
 
-CREATE TABLE Encuestas (
-    IdOpinion INT NOT NULL,
-    IdCliente INT NOT NULL,
-    IdProducto INT NOT NULL,
-    IdCarga INT NOT NULL,
-    Fecha DATE NOT NULL,
-    Comentario NVARCHAR(MAX),
-    IdClasificacion INT,
-    PuntajeSatisfaccion INT CHECK (PuntajeSatisfaccion BETWEEN 1 AND 5),
-    PRIMARY KEY NONCLUSTERED (IdOpinion, Fecha),
-    CONSTRAINT FK_Encuestas_Clasificacion FOREIGN KEY (IdClasificacion) REFERENCES Clasificaciones(IdClasificacion),
-    CONSTRAINT FK_Encuestas_Cliente FOREIGN KEY (IdCliente) REFERENCES Clientes(IdCliente),
-    CONSTRAINT FK_Encuestas_Producto FOREIGN KEY (IdProducto) REFERENCES Productos(IdProducto),
-    CONSTRAINT FK_Encuestas_Carga FOREIGN KEY (IdCarga) REFERENCES RegistroCargas(IdCarga)
-)
-ON ps_FechaRango(Fecha);
-GO
+**Flujo de Ejecución:**
 
-CREATE TABLE WebReviews (
-    IdReview VARCHAR(10) NOT NULL,
-    IdCliente INT NOT NULL,
-    IdProducto INT NOT NULL,
-    IdCarga INT NOT NULL,
-    Fecha DATE NOT NULL,
-    Comentario NVARCHAR(MAX),
-    Rating INT CHECK (Rating BETWEEN 1 AND 5),
-    PRIMARY KEY NONCLUSTERED (IdReview, Fecha),
-    CONSTRAINT FK_WebReviews_Cliente FOREIGN KEY (IdCliente) REFERENCES Clientes(IdCliente),
-    CONSTRAINT FK_WebReviews_Producto FOREIGN KEY (IdProducto) REFERENCES Productos(IdProducto),
-    CONSTRAINT FK_WebReviews_Carga FOREIGN KEY (IdCarga) REFERENCES RegistroCargas(IdCarga)
-)
-ON ps_FechaRango(Fecha);
-GO
-```
+1.  **Fase 1: Extracción de Datos (`extract_data`)**
+    *   El script comienza leyendo todos los archivos CSV definidos en la configuración. Utiliza la librería Pandas, estándar de la industria para la ciencia de datos en Python, para cargar eficientemente los datos en estructuras de memoria llamadas DataFrames.
 
-## Result set del select de cada tabla cargada
-**Encuesta:**
-![Tabla-encuesta](img/image_encuesta.png)
+2.  **Fase 2: Carga de Dimensiones (`prepare_and_load_dimensions`)**
+    *   Con los datos en memoria, el script identifica y extrae los valores únicos para cada dimensión (categorías de productos, clasificaciones de encuestas, etc.).
+    *   Estos datos únicos se cargan en sus respectivas tablas de dimensión en la base de datos. Este proceso es **idempotente**, lo que significa que si el script se ejecuta de nuevo, no insertará registros duplicados, sino que los omitirá de forma inteligente.
 
-**Encuesta:**
-![Tabla-Comentario](img/image_comentario.png)
+3.  **Fase 3: Mapeo de Claves de Negocio a Claves Foráneas (`get_id_maps`)**
+    *   Una vez que las tablas de dimensión están pobladas, el script consulta la base de datos para crear "diccionarios de mapeo". Estos diccionarios son esenciales para traducir los datos de negocio (ej. el nombre de categoría "Hogar") a las claves numéricas (`IdCategoria`) que se usan para mantener la integridad referencial en la base de datos.
 
-**Categoria:**
-![Tabla-Categoria](img/image_categoria.png)
+4.  **Fase 4: Transformación y Limpieza de Datos (`transform_data`)**
+    *   Esta es la fase más crítica, donde se aplican las reglas de negocio y se garantiza la calidad de los datos.
+    *   **Normalización:** Se estandarizan los identificadores de clientes y productos, eliminando prefijos de texto para asegurar un formato numérico consistente.
+    *   **Garantía de Integridad Referencial:** Se implementó una lógica avanzada para evitar la pérdida de datos. El script identifica todas las opiniones que hacen referencia a un cliente o producto que no existe en los archivos maestros y crea registros "placeholder" para ellos. Esto asegura que cada opinión, que es el dato más valioso, sea capturada.
+    *   **Resolución de Conflictos:** Se detectan los clientes con correos electrónicos duplicados. En lugar de eliminar datos, se preserva el registro del cliente y se le asigna un email provisional único para cumplir con las restricciones de la base de datos.
+    *   **Asignación de Claves:** Se utilizan los mapas de la Fase 3 para convertir todas las referencias de texto en las tablas de hechos a sus correspondientes claves foráneas numéricas.
 
-**Registro Cargas:**
-![Tabla-RegistroCargas](img/image_RegistroCargas.png)
+5.  **Fase 5: Carga Transaccional de Datos (`load_main_tables`)**
+    *   **Atomicidad:** La carga de todas las tablas principales y de hechos se realiza dentro de una **única transacción de base de datos**. Esto es una característica de nivel empresarial que garantiza la consistencia de los datos. Si cualquier parte de la carga falla, la transacción completa se revierte (`ROLLBACK`), evitando que la base de datos quede en un estado inconsistente o con datos parciales.
+    *   **Orden Lógico:** La inserción de datos sigue un orden estricto para respetar las relaciones de clave foránea, cargando primero las dimensiones (`Clientes`, `Productos`) y luego las tablas de hechos (`Comentarios`, `Encuestas`, `WebReviews`).
 
-**Registro Calificaicion:**
-![Tabla-RegistroCargas](img/image_calificacion.png)
+---
 
-**Registro Producto:**
-![Tabla-Producto](img/image_producto.png)
+### **4. Metodología de Desarrollo y Depuración**
 
-**Registro Fuente:**
-![Tabla-Fuente](img/image_fuente.png)
+El desarrollo del pipeline fue un proceso iterativo enfocado en la robustez y la calidad del dato, siguiendo los siguientes pasos:
 
-## Captura de pantallas que muestra la cantidad de registros subida a cada tabla.
-**Carga de Datos**
-![carga-datos](img/image_cargadedatos.png)
+1.  **Refactorización y Modularidad:** Inicialmente, el código se reestructuró en funciones especializadas para cada fase del ETL, mejorando la legibilidad y facilitando el mantenimiento. Se implementó una lógica de carga condicional para dotar al sistema de idempotencia.
 
-**Datos existentes**
-![datos-existentes](img/image_existentes.png)
+2.  **Depuración de Inconsistencias de Datos:** Las primeras pruebas revelaron errores de tipo de dato (fechas) y violaciones de unicidad (emails). Esto se resolvió con rutinas de validación y limpieza más estrictas en la fase de transformación.
+
+3.  **Garantía de Integridad Referencial:** El desafío más significativo fue la gestión de claves foráneas. Se detectó que la simple eliminación de datos duplicados causaba la pérdida de registros necesarios. La solución fue implementar una estrategia de "consistencia proactiva": se identifican todas las entidades requeridas a lo largo de todas las fuentes de datos, se crean "placeholders" para las que faltan, y solo entonces se resuelven los conflictos, garantizando que ninguna opinión se pierda por falta de datos maestros.
+
+4.  **Aislamiento de Transacciones:** Finalmente, se identificó un error de visibilidad de datos entre operaciones de carga sucesivas. La arquitectura se rediseñó para ejecutar toda la fase de carga de tablas principales dentro de una única transacción atómica, asegurando que los datos insertados en un paso son inmediatamente visibles para el siguiente y garantizando que la base de datos nunca quede en un estado inconsistente.
+
+---
+
+### **5. Resultados y Verificación de la Carga**
+
+El pipeline fue ejecutado con éxito en un entorno con la base de datos vacía, realizando una carga completa de todos los registros.
+
+#### **5.1. Resumen de Registros Cargados**
+La siguiente captura de la consola muestra la cantidad de registros nuevos que se insertaron en cada tabla durante la ejecución final:
+
+![Registros cargados en cada tabla](img/image_cargadedatos.png)
+
+#### **5.2. Muestreo de Datos por Tabla**
+A continuación, se adjuntan capturas de pantalla que muestran una selección de los datos (`SELECT TOP 100 *`) cargados en cada una de las tablas principales, verificando la correcta inserción y formato de los mismos.
+
+*   **Tabla: Clientes**
+    ![Result Set de Clientes](img/image_cargadedatos.png) 
+
+*   **Tabla: Productos**
+    ![Result Set de Productos](img/image_producto.png)
+
+*   **Tabla: Categorias**
+    ![Result Set de Categorias](img/image_categoria.png)
+
+*   **Tabla: Clasificaciones**
+    ![Result Set de Clasificaciones](img/image_calificacion.png)
+
+*   **Tabla: Fuentes**
+    ![Result Set de Fuentes](img/image_fuente.png)
+
+*   **Tabla: RegistroCargas**
+    ![Result Set de RegistroCargas](img/image_RegistroCargas.png)
+
+*   **Tabla: Comentarios**
+    ![Result Set de Comentarios](img/image_comentario.png)
+
+*   **Tabla: Encuestas**
+    ![Result Set de Encuestas](img/image_encuesta.png)
+
+*   **Tabla: WebReviews**
+    ![Result Set de WebReviews](img/image_web_review.png)
+
+---
+
+### **6. Conclusión**
+
+El proyecto ha culminado con la entrega de un pipeline de datos ETL completo, automatizado y robusto. La solución implementada no solo cumple con los objetivos iniciales de centralizar la información, sino que también incorpora características avanzadas como la carga idempotente, la garantía de integridad referencial mediante placeholders y la carga transaccional atómica, asegurando la máxima calidad y consistencia de los datos.
+
+La base de datos `OpinionDB` está ahora poblada y lista para ser explotada por herramientas de Business Intelligence (BI) y análisis de datos para extraer insights valiosos sobre la opinión de los clientes.
